@@ -72,8 +72,20 @@ fn lists_regular_files_in_special_folder() {
             cwd: dirs.test().join("[abcd]"), format!(r#"ls | length"#));
         assert_eq!(actual.out, "1");
         let actual = nu!(
+            cwd: dirs.test(), format!(r#"ls --glob false [abcd] | length"#));
+        assert_eq!(actual.out, "1");
+        let actual = nu!(
+            cwd: dirs.test(), format!(r#"ls --glob true [abcd] | length"#));
+        assert!(actual.err.contains("no matches found"));
+        let actual = nu!(
             cwd: dirs.test().join("[bbcd]"), format!(r#"ls | length"#));
         assert_eq!(actual.out, "0");
+        let actual = nu!(
+            cwd: dirs.test(), format!(r#"ls --glob false [bbcd] | length"#));
+        assert_eq!(actual.out, "0");
+        let actual = nu!(
+            cwd: dirs.test(), format!(r#"ls --glob true [bbcd] | length"#));
+        assert!(actual.err.contains("no matches found"));
         let actual = nu!(
             cwd: dirs.test().join("abcd/*"), format!(r#"ls | length"#));
         assert_eq!(actual.out, "1");

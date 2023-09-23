@@ -3,7 +3,7 @@ use crate::DirInfo;
 use chrono::{DateTime, Local, LocalResult, TimeZone, Utc};
 use nu_engine::env::current_dir;
 use nu_engine::CallExt;
-use nu_glob::MatchOptions;
+use nu_glob::{MatchOptions, Pattern};
 use nu_path::expand_to_real_path;
 use nu_protocol::ast::Call;
 use nu_protocol::engine::{Command, EngineState, Stack};
@@ -41,6 +41,12 @@ impl Command for Ls {
             // Using a string instead of a glob pattern shape so it won't auto-expand
             .optional("pattern", SyntaxShape::String, "the glob pattern to use")
             .switch("all", "Show hidden files", Some('a'))
+            .named(
+                "glob",
+                SyntaxShape::Boolean,
+                "Interpret pattern as a glob. (default: true)",
+                Some('g')
+            )
             .switch(
                 "long",
                 "Get all available columns for each entry (slower; columns are platform-dependent)",
@@ -103,9 +109,19 @@ impl Command for Ls {
                 let mut p = expand_to_real_path(p.item);
 
                 let expanded = nu_path::expand_path_with(&p, &cwd);
+
+                // If the user does not want their part to be interpreted as a glob, we still might need to use
+                // a glob expression to get the contents of a directory. Escaping their input now prevents the
+                // logic below from becoming too complicated.
+                let pattern_is_glob: bool =
+                    call.get_flag(engine_state, stack, "glob")?.unwrap_or(true);
+                if !pattern_is_glob {
+                    p = PathBuf::from(Pattern::escape(p.to_string_lossy().as_ref()));
+                }
+
                 // Avoid checking and pushing "*" to the path when directory (do not show contents) flag is true
                 if !directory && expanded.is_dir() {
-                    if permission_denied(&p) {
+                    if permission_denied(&expanded) {
                         #[cfg(unix)]
                         let error_msg = format!(
                             "The permissions of {:o} do not allow access for this user",
@@ -132,6 +148,8 @@ impl Command for Ls {
                         return Ok(Value::list(vec![], call_span).into_pipeline_data());
                     }
                     p.push("*");
+                } else if !pattern_is_glob {
+                    p = PathBuf::from(Pattern::escape(p.to_string_lossy().as_ref()));
                 }
                 let absolute_path = p.is_absolute();
                 (p, p_tag, absolute_path)
