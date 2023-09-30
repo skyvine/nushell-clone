@@ -101,6 +101,7 @@ pub struct Paths {
     options: MatchOptions,
     todo: Vec<Result<(PathBuf, usize), GlobError>>,
     scope: Option<PathBuf>,
+    original: String,
 }
 
 /// Return an iterator that produces all the `Path`s that match the given
@@ -239,6 +240,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
             options,
             todo: Vec::new(),
             scope: None,
+            original: String::from(pattern),
         });
     }
 
@@ -270,6 +272,7 @@ pub fn glob_with(pattern: &str, options: MatchOptions) -> Result<Paths, PatternE
         options,
         todo,
         scope: Some(scope),
+        original: String::from(pattern),
     })
 }
 
@@ -338,11 +341,14 @@ impl Iterator for Paths {
     type Item = GlobResult;
 
     fn next(&mut self) -> Option<GlobResult> {
+        let mut getting_first_match = false;
+
         // the todo buffer hasn't been initialized yet, so it's done at this
         // point rather than in glob() so that the errors are unified that is,
         // failing to fill the buffer is an iteration error construction of the
         // iterator (i.e. glob()) only fails if it fails to compile the Pattern
         if let Some(scope) = self.scope.take() {
+            getting_first_match = true;
             if !self.dir_patterns.is_empty() {
                 // Shouldn't happen, but we're using -1 as a special index.
                 assert!(self.dir_patterns.len() < !0);
@@ -353,7 +359,15 @@ impl Iterator for Paths {
 
         loop {
             if self.dir_patterns.is_empty() || self.todo.is_empty() {
-                return None;
+                if getting_first_match {
+                    if let Ok(metadata) = std::fs::metadata(self.original.clone()) {
+                        return Some(Ok(self.original.clone().into()));
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
             }
 
             let (path, mut idx) = match self
